@@ -31,11 +31,7 @@ module Rego.Ast
   and ident = string
   
   and expr =
-    | String of string
-    | RawString of string
-    | Number of int (* TODO: support i64, u64, f64, big decimal *)
-    | Bool of bool
-    | Null
+    | Value of Rego.Value.value
     | Var of ident
     | Array of (items:list expr)
     | Set of (items:list expr)
