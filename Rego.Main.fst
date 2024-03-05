@@ -26,13 +26,51 @@ let expr = Ast.Array (
         (Ast.Value (String "Hello"), Ast.Value (String "World"))
         ::[]
       )::
-      []      
+      []
     )::[]
   )::[]
 )
 
 let intr = Interpreter.make_new()
 let (v5, intr1) = Interpreter.eval intr expr
+
+// [ [a, b] |
+//  true
+//  a = {"English": "Hello", "French": "Salut"}
+//  b = a["English"]
+// ]
+let query = {
+  stmts= [
+    { literal = Expr(Value(Bool true)); with_mods=[] }; // true
+    { literal =
+       Expr(AssignExpr
+             (ColEq,
+              (Var "a"),
+              (Ast.Object [
+                (Value (String "English"), Value (String "Hello"));
+                (Value (String "French"), Value (String "Salut"));
+               ]))
+       );
+       with_mods=[]
+    };
+    {
+      literal =
+        Expr(AssignExpr
+             (ColEq,
+              (Var "b"),
+              (RefBrack ((Var "a"), (Value (String "English")))))
+
+        );
+      with_mods=[]
+    };
+    { literal = ArrayComprOutput (Ast.Array [Var "a"; Var"b"]);
+      with_mods = []; }
+  ];
+}
+
+let intr2 = Interpreter.make_new()
+let (v6, intr3) = Interpreter.eval_user_query intr2 query
+
 
 let main () =
   FStar.IO.print_string (to_json_pretty v1);
@@ -44,8 +82,10 @@ let main () =
   FStar.IO.print_string (to_json_pretty v4);
   FStar.IO.print_string "\n";
   FStar.IO.print_string (to_json_pretty v5);
+  FStar.IO.print_string "\n";
+  FStar.IO.print_string (to_json_pretty v6);
   FStar.IO.print_string "\n"
-  
+
 //Run ``main ()`` when the module loads
 #push-options "--warn_error -272"
 let _ = main ()

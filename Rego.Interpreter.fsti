@@ -12,10 +12,10 @@ type array_compr_ctx = {
   ac_value: value
 }
 
-type context = 
+type context =
   | ArrayComprCtx of array_compr_ctx
   | NoneCtx
-  
+
 noeq
 type interpreter = {
   rules: list (string*rule);
@@ -26,3 +26,5 @@ type interpreter = {
 val make_new () : interpreter
 
 val eval (i:interpreter) (e:expr) : (value*interpreter)
+
+val eval_user_query (i:interpreter) (q:query) : (value*interpreter)
