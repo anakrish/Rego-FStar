@@ -17,6 +17,8 @@ module Rego.Value
   type ord = x:int { x = -1 || x = 0 || x = 1}
   
   val cmp (v1:value) (v2:value) : ord
+
+  val insert_into_array (arr:value) (v:value) : value
   
   val insert_into_object (obj:value) (key:value) (v:value) : value
 

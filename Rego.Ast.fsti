@@ -12,7 +12,7 @@ module Rego.Ast
     | Add
     | Sub
     | Mul
-    | Div
+    | Divv
     | Mod
 
   and boolOp =
@@ -29,16 +29,17 @@ module Rego.Ast
 
 
   and ident = string
-  
-  and expr =
+
+  (* without eqtype annotation "Failed to solve universe inequalities for inductives" *)
+  and expr:eqtype = 
     | Value of Rego.Value.value
     | Var of ident
     | Array of (items:list expr)
     | Set of (items:list expr)
     | Object of (fields:list (expr * expr))
-    | ArrayCompr of (term:expr) * query
-    | SetCompr of (term:expr) * query
-    | ObjectCompr of (key:expr) * (value:expr) * query
+    | ArrayCompr of query
+    | SetCompr of query
+    | ObjectCompr of query
     | Call of (fcn:expr) * (params:list expr)
     | UnaryExpr of expr
     | RefDot of (refr:expr) * (field:string)
@@ -55,6 +56,9 @@ module Rego.Ast
     | Expr of expr
     | NotExpr of (a:expr)
     | Every of (key:option ident) * (value:ident) * (domain:expr) * query
+    | ArrayComprOutput of (e:expr)
+    | SetComprOutput of (e:expr)
+    | ObjectComprOutput of (k:expr) * (v:expr)
 
   and withModifier =  {
       refr: expr;
@@ -104,4 +108,5 @@ module Rego.Ast
     policy: list rule;
     rego_v1: bool;
   }
+
  #pop-options

@@ -70,6 +70,11 @@ open FStar.String
 
       | Undefined, Undefined -> 0
 
+  let insert_into_array (arr:value) (v:value) : value =
+    match arr with
+    | Array a -> Array (List.Tot.append a [v])
+    | _ -> Undefined
+  
   let rec insert_into_fields (fields:list (value*value)) (key:value) (value:value) =
       match fields with
         | (k, v)::tl ->

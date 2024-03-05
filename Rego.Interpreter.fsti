@@ -2,15 +2,27 @@
 // Licensed under the MIT License.
 
 module Rego.Interpreter
+open Rego.Ast
+open Rego.Value
 
-type scope = FStar.Map.t string Value.value
+type scope = list (string*value)
 
+type array_compr_ctx = {
+  ac_output_expr: expr;
+  ac_value: value
+}
+
+type context = 
+  | ArrayComprCtx of array_compr_ctx
+  | NoneCtx
+  
 noeq
 type interpreter = {
-  rules: list (string*Ast.rule);
+  rules: list (string*rule);
   scopes: list scope;
+  loop_exprs: list (expr*value);
 }
 
 val make_new () : interpreter
 
-val eval (i:interpreter) (e:Ast.expr) : (Value.value*interpreter)
+val eval (i:interpreter) (e:expr) : (value*interpreter)
