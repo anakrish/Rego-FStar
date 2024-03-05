@@ -71,6 +71,16 @@ let query = {
 let intr2 = Interpreter.make_new()
 let (v6, intr3) = Interpreter.eval_user_query intr2 query
 
+let query1 = {
+  stmts = List.Tot.append query.stmts 
+  [{
+    literal = Expr(Value (Bool false)); with_mods=[]
+  }]
+}
+
+let intr4 = Interpreter.make_new()
+let (v7, intr5) = Interpreter.eval_user_query intr4 query1
+
 
 let main () =
   FStar.IO.print_string (to_json_pretty v1);
@@ -84,6 +94,8 @@ let main () =
   FStar.IO.print_string (to_json_pretty v5);
   FStar.IO.print_string "\n";
   FStar.IO.print_string (to_json_pretty v6);
+  FStar.IO.print_string "\n";
+  FStar.IO.print_string (to_json_pretty v7);
   FStar.IO.print_string "\n"
 
 //Run ``main ()`` when the module loads
