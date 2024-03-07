@@ -1,0 +1,12 @@
+(include_subdirs unqualified)
+(executable
+  (name Rego_Main)
+  (libraries
+    batteries
+    fstar.lib
+    yojson
+    ppx_deriving_yojson.runtime
+  )
+  (preprocess (pps ppx_deriving_yojson ppx_deriving.show))
+  (flags (:standard -w -8-9-11-26-27-33-39))
+)
