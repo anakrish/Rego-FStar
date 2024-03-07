@@ -1,0 +1,9 @@
+{
+  "fstar_exe": "fstar.exe",
+  "options": [
+    "--cache_dir", "output/cache"
+  ],
+  "include_dirs": [
+    "output/cache"
+  ]
+}
