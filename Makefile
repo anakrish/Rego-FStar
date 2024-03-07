@@ -8,7 +8,7 @@ FSTAR_OPTIONS=--cache_checked_modules $(ALREADY_CACHED) --cache_dir $(CACHE_DIR)
 all: prep build
 
 test: build
-	./Rego_Main.exe
+	./output/Rego_Main.exe
 
 .depend: $(SOURCE_FILES)
 	$(FSTAR) --codegen OCaml $(FSTAR_OPTIONS) --dep full $^ --extract '* -Prims -FStar' --output_deps_to .depend
