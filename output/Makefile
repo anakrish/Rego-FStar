@@ -8,7 +8,7 @@ endif
 export OCAMLPATH
 
 # with dune
-Rego_Main.exe: $(wildcard *.ml)
+../Rego_Main.exe: $(wildcard *.ml)
 	OCAMLPATH="$(OCAMLPATH)" dune build
 	cp _build/default/Rego_Main.exe $@
 
