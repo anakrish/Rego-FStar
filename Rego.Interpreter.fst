@@ -153,7 +153,14 @@ and eval_fields (fields:list (expr*expr)) (obj:value)
 
 
 and eval_stmts_in_loop (pr:(list (expr&value) & list literalStmt))  (out:value) 
-: Tot (iresult value) //(decreases pr)
+: Tot (iresult value) (decreases %[snd pr; 1; fst pr])
+  (* what decreases is the lexicographic ordering of the list of statements and the list of loop expressions, in that order;
+     however, we also make a recursive call to an auxiliary eval_query_stmts, and that explains the additional '1' in the order, 
+     i.e., we can call the auxiliary function with the same stmts, so long as that aux function doesn't
+     call us back without decreasing the stmts itself.
+
+     See the "trick" mentioned in the note here: https://fstar-lang.org/tutorial/book/part1/part1_termination.html#mutual-recursion
+      *)
 = let (iterations, stmts) = pr in
 match iterations with
 | [] -> return out
@@ -164,7 +171,7 @@ match iterations with
   eval_stmts_in_loop (tl, stmts) out1
 
 and eval_query_stmts (stmts:list literalStmt) (out:value)
-  : Tot(iresult value)
+  : Tot(iresult value) (decreases %[stmts; 0])
 = match stmts with
   | [] -> return Undefined
   
