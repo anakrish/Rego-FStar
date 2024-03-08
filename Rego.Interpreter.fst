@@ -20,7 +20,7 @@ let get () : iresult intr = fun i -> (i, i)
 let set i : iresult unit = fun _ -> ((), i)
 let run #a (f:iresult a) (i:intr) : a & intr = f i
 
-let lookup_loop_var (e:expr) : iresult _ = 
+let lookup_loop_expr (e:expr) : iresult _ = 
   let! i = get() in
   return <| List.Tot.find (fun (k,_) -> k = e) i.loop_exprs
 
@@ -37,13 +37,73 @@ let lookup_local_var (name:string) : iresult value =
     return <| lookup_var_in_scopes i.scopes name
 
 
+let rec hoist_loops_in_expr (e:expr) (loops:list expr) 
+: iresult(list expr)
+= match e with
+  | RefBrack (refr, Var "_") -> hoist_loops_in_expr refr (e::loops)
+  // TODO: named loop index vars
+  | RefBrack (refr, _) -> hoist_loops_in_expr refr loops
+  | Ast.Array arr -> hoist_loops_in_exprs arr loops
+  | Ast.Set set -> hoist_loops_in_exprs set loops
+  | Ast.Object fields -> hoist_loops_in_fields fields loops
+  | Call (_, args) -> hoist_loops_in_exprs args loops
+  | UnaryExpr e -> hoist_loops_in_expr e loops
+  | RefDot (refr, _) -> hoist_loops_in_expr refr loops
+  | BinExpr (_, lhs, rhs)
+  | BoolExpr (_, lhs, rhs)
+  | ArithExpr (_, lhs, rhs) 
+  | AssignExpr (_, lhs, rhs) -> 
+    let! lps = hoist_loops_in_expr lhs loops in
+    hoist_loops_in_expr rhs lps
+  | MembershipExpr (k, v, c) ->
+    let! lps1 = hoist_loops_in_expr k loops in
+    let! lps2 = hoist_loops_in_expr v lps1 in
+    hoist_loops_in_expr c lps2
+  | ArrayCompr _ | SetCompr _ | ObjectCompr _  -> return loops
+  | Var _ | Value _  -> return loops
+
+and hoist_loops_in_exprs exprs loops
+: iresult (list expr)
+= match exprs with
+  | [] -> return loops
+  | hd::tl -> 
+    let! lps = hoist_loops_in_expr hd loops in
+    hoist_loops_in_exprs tl lps
+
+and hoist_loops_in_fields fields loops
+: iresult (list expr)
+= match fields with
+  | [] -> return loops
+  | (k, v)::tl -> 
+    let! lps1 = hoist_loops_in_expr k loops in
+    let! lps2 = hoist_loops_in_expr v lps1 in
+    hoist_loops_in_fields tl lps2
+
+let hoist_loops_in_literal_stmt s : iresult literalStmt
+= match s.literal with
+  | Expr e -> 
+    let! exprs = hoist_loops_in_expr e [] in return { s with loops=exprs }    
+  | _ -> return s
+
+let rec hoist_loops_in_stmts (stmts:list literalStmt) : iresult (list literalStmt)
+= match stmts with 
+  | [] -> return []
+  | hd::tl -> 
+    let! hhd = hoist_loops_in_literal_stmt hd in
+    let! htl = hoist_loops_in_stmts tl in
+    return (hhd::htl)
+let hoist_loops_in_query q : iresult query
+= let! stmts = hoist_loops_in_stmts q.stmts in
+  return { q with stmts = stmts }
+
+
 let lookup_var (ident:string)
 : iresult value
 = lookup_local_var ident
 
 let rec eval_expr (e:expr)
 : iresult value
-= match! lookup_loop_var e with
+= match! lookup_loop_expr e with
   | Some((_, v)) -> return v
   | None ->
     match e with
@@ -54,7 +114,7 @@ let rec eval_expr (e:expr)
     | Ast.Object fields -> eval_fields fields (Object [])
     | Ast.ArrayCompr query -> eval_query_stmts query.stmts (Value.Array [])
     | Ast.SetCompr query -> eval_query_stmts query.stmts (Value.Set [])
-    | Ast.ObjectCompr query -> eval_query_stmts query.stmts (Value.Object [])
+      | Ast.ObjectCompr query -> eval_query_stmts query.stmts (Value.Object [])
     | Ast.RefDot rf -> eval_ref_dot rf
     | Ast.RefBrack ri -> eval_ref_brack ri
     | Ast.AssignExpr olr -> eval_assign_expr olr
@@ -91,8 +151,20 @@ and eval_fields (fields:list (expr*expr)) (obj:value)
       | vv -> eval_fields tl (insert_into_object obj kv vv)
 
 
+
+and eval_stmts_in_loop (pr:(list (expr&value) & list literalStmt))  (out:value) 
+: Tot (iresult value) //(decreases pr)
+= let (iterations, stmts) = pr in
+match iterations with
+| [] -> return out
+| (e,v)::tl -> 
+  let! orig_i = get() in
+  set { orig_i with loop_exprs = (e, v)::orig_i.loop_exprs };!
+  let! out1 = eval_query_stmts stmts out in
+  eval_stmts_in_loop (tl, stmts) out1
+
 and eval_query_stmts (stmts:list literalStmt) (out:value)
-: iresult value
+  : Tot(iresult value)
 = match stmts with
   | [] -> return Undefined
   
@@ -131,7 +203,7 @@ and eval_ref_dot rf
 
 (* todo chaining *)
 and eval_ref_brack (pr:expr*expr)
-: Tot (iresult value) (decreases pr)
+: Tot (iresult value)
 = let refr, index = pr in
   let! v = eval_expr refr in
   let! idx = eval_expr index in
@@ -166,7 +238,8 @@ let eval_user_query' (q:Ast.query)
 : iresult value
 = let! i = get() in
   set { i with scopes = []::i.scopes } ;!
-  eval_query_stmts q.stmts (Value.Array [])
+  let! q1 = hoist_loops_in_query q in
+  eval_query_stmts q1.stmts (Value.Array [])
 
 let eval_user_query (i:intr) (q:Ast.query) : (value*intr) =
   run (eval_user_query' q) i

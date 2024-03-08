@@ -41,7 +41,7 @@ let (v5, intr1) = Interpreter.eval intr expr
 // ]
 let query = {
   stmts= [
-    { literal = Expr(Value(Bool true)); with_mods=[] }; // true
+    { literal = Expr(Value(Bool true)); with_mods=[]; loops = []; }; // true
     { literal =
        Expr(AssignExpr
              (ColEq,
@@ -51,7 +51,8 @@ let query = {
                 (Value (String "French"), Value (String "Salut"));
                ]))
        );
-       with_mods=[]
+       with_mods=[];
+       loops = [];
     };
     {
       literal =
@@ -61,10 +62,13 @@ let query = {
               (RefBrack ((Var "a"), (Value (String "English")))))
 
         );
-      with_mods=[]
+      with_mods=[];
+      loops = [];
     };
     { literal = ArrayComprOutput (Ast.Array [Var "a"; Var"b"]);
-      with_mods = []; }
+      with_mods = [];
+      loops = [];
+      }
   ];
 }
 
@@ -74,7 +78,7 @@ let (v6, intr3) = Interpreter.eval_user_query intr2 query
 let query1 = {
   stmts = List.Tot.append query.stmts 
   [{
-    literal = Expr(Value (Bool false)); with_mods=[]
+    literal = Expr(Value (Bool false)); with_mods=[]; loops = [];
   }]
 }
 

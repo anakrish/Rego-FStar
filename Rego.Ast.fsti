@@ -68,6 +68,7 @@ module Rego.Ast
   and literalStmt = {
       literal: literal;
       with_mods: list withModifier;
+      loops: list expr
   }
 
   and query = {
