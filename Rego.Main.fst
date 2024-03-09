@@ -34,14 +34,19 @@ let expr = Ast.Array (
 let intr = Interpreter.make_new()
 let (v5, intr1) = Interpreter.eval intr expr
 
-// [ [a, b] |
+// [ [e, f, g] |
 //  true
 //  a = {"English": "Hello", "French": "Salut"}
 //  b = a["English"]
+//  c = [41, 47]
+//  d = [a , v]
+//  e = d[f][g] # Double loops
 // ]
+// Produces:
+// [ ["Hello", 0, "English"], ["Salut", 0, "French"], [41, 1, 0], [47, 1, 1]]
 let query = {
   stmts= [
-    { literal = Expr(Value(Bool true)); with_mods=[] }; // true
+    { literal = Expr(Value(Bool true)); with_mods=[]; }; // true
     { literal =
        Expr(AssignExpr
              (ColEq,
@@ -51,7 +56,7 @@ let query = {
                 (Value (String "French"), Value (String "Salut"));
                ]))
        );
-       with_mods=[]
+       with_mods=[];
     };
     {
       literal =
@@ -61,15 +66,56 @@ let query = {
               (RefBrack ((Var "a"), (Value (String "English")))))
 
         );
-      with_mods=[]
+      with_mods=[];
     };
-    { literal = ArrayComprOutput (Ast.Array [Var "a"; Var"b"]);
-      with_mods = []; }
+    {
+      literal =
+        Expr(AssignExpr
+             (ColEq,
+              (Var "c"),
+              (Ast.Array [Value (Number 41); Value (Number 47)]))
+
+        );
+      with_mods=[];
+    };
+    {
+      literal =
+        Expr(AssignExpr
+             (ColEq,
+              (Var "d"),
+              (Ast.Array [Var "a"; Var "c"]))
+
+        );
+      with_mods=[];
+    };
+    {
+      literal =
+        Expr(AssignExpr
+             (ColEq,
+              (Var "e"),
+              (RefBrack (RefBrack (Var "d", Var "f"), (Var "g"))))
+
+        );
+      with_mods=[];
+    };
+    { literal = ArrayComprOutput (Ast.Array [Var "e"; Var "f"; Var "g"]);
+      with_mods = [];
+    }
   ];
 }
 
 let intr2 = Interpreter.make_new()
 let (v6, intr3) = Interpreter.eval_user_query intr2 query
+
+let query1 = {
+  stmts = List.Tot.append query.stmts
+  [{
+    literal = Expr(Value (Bool false)); with_mods=[];
+  }]
+}
+
+let intr4 = Interpreter.make_new()
+let (v7, intr5) = Interpreter.eval_user_query intr4 query1
 
 
 let main () =
@@ -84,6 +130,8 @@ let main () =
   FStar.IO.print_string (to_json_pretty v5);
   FStar.IO.print_string "\n";
   FStar.IO.print_string (to_json_pretty v6);
+  FStar.IO.print_string "\n";
+  FStar.IO.print_string (to_json_pretty v7);
   FStar.IO.print_string "\n"
 
 //Run ``main ()`` when the module loads

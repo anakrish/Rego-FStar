@@ -59,6 +59,7 @@ module Rego.Ast
     | ArrayComprOutput of (e:expr)
     | SetComprOutput of (e:expr)
     | ObjectComprOutput of (k:expr) * (v:expr)
+    | LoopExpr of expr
 
   and withModifier =  {
       refr: expr;
