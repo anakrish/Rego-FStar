@@ -59,6 +59,7 @@ module Rego.Ast
     | ArrayComprOutput of (e:expr)
     | SetComprOutput of (e:expr)
     | ObjectComprOutput of (k:expr) * (v:expr)
+    | LoopExpr of expr
 
   and withModifier =  {
       refr: expr;
@@ -68,7 +69,6 @@ module Rego.Ast
   and literalStmt = {
       literal: literal;
       with_mods: list withModifier;
-      loops: list expr
   }
 
   and query = {

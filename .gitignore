@@ -29,3 +29,7 @@ setup.log
 _opam/
 
 out/
+
+output/
+.depend
+Rego_Main.exe

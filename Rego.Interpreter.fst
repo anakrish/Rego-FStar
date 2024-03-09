@@ -13,6 +13,13 @@ let make_new () = {
    scopes = [];
    loop_exprs = [];
 }
+
+type loop_iteration = {
+  loop_expr: Ast.expr;
+  loop_value: value;
+  bindings: list (string & value)
+}
+
 let iresult a = intr -> a & intr
 let (let!) #a #b (f:iresult a) (g:a -> iresult b) : iresult b = fun i -> let (a', i') = f i in g a' i'
 let return #a (x:a) : iresult a = fun i -> (x, i)
@@ -36,12 +43,48 @@ let lookup_local_var (name:string) : iresult value =
     let! i = get () in
     return <| lookup_var_in_scopes i.scopes name
 
+let rec make_array_loop_iterations col (le:expr) (idx:string) (idxv:nat)
+: Tot (list loop_iteration)
+= 
+match col with
+| [] -> []
+| hd::tl ->
+  let itr = match idx with
+    | "_" -> { loop_expr=le; loop_value=hd; bindings = [] }
+    | _ -> { loop_expr=le; loop_value=hd; bindings = [(idx, Number idxv)] }
+  in
+    itr::make_array_loop_iterations tl le idx (idxv + 1)
+
+let rec make_set_loop_iterations col (le:expr) (idx:string)
+: Tot (list loop_iteration)
+= 
+match col with
+| [] -> []
+| hd::tl ->
+  let itr = match idx with
+    | "_" -> { loop_expr=le; loop_value=hd; bindings = [] }
+    | _ -> { loop_expr=le; loop_value=hd; bindings = [(idx, hd)] }
+  in
+    itr::make_set_loop_iterations tl le idx
+
+let rec make_object_loop_iterations col (le:expr) (idx:string)
+: Tot (list loop_iteration)
+= 
+match col with
+| [] -> []
+| (k,v)::tl ->
+  let itr = match idx with
+    | "_" -> { loop_expr=le; loop_value=v; bindings = [] }
+    | _ -> { loop_expr=le; loop_value=v; bindings = [(idx, k)] }
+  in
+    itr::make_object_loop_iterations tl le idx
+
 
 let rec hoist_loops_in_expr (e:expr) (loops:list expr) 
 : iresult(list expr)
 = match e with
-  | RefBrack (refr, Var "_") -> hoist_loops_in_expr refr (e::loops)
-  // TODO: named loop index vars
+  (* TODO: should we avoid hoisting if the index var is already defined? *)
+  | RefBrack (refr, Var _) -> hoist_loops_in_expr refr (e::loops)
   | RefBrack (refr, _) -> hoist_loops_in_expr refr loops
   | Ast.Array arr -> hoist_loops_in_exprs arr loops
   | Ast.Set set -> hoist_loops_in_exprs set loops
@@ -79,23 +122,23 @@ and hoist_loops_in_fields fields loops
     let! lps2 = hoist_loops_in_expr v lps1 in
     hoist_loops_in_fields tl lps2
 
-let hoist_loops_in_literal_stmt s : iresult literalStmt
-= match s.literal with
+let rec hoist_loops_in_stmts stmts : iresult (list literalStmt)
+= match stmts with
+| [] -> return []
+| hd::tl -> 
+  let! tl' = hoist_loops_in_stmts tl in
+  match hd.literal with
   | Expr e -> 
-    let! exprs = hoist_loops_in_expr e [] in return { s with loops=exprs }    
-  | _ -> return s
+    let! exprs = hoist_loops_in_expr e [] in
+    let loops = List.Tot.map (fun e -> { literal = LoopExpr e; with_mods = []}) exprs in
+    let pfx = List.Tot.append loops [hd] in
+    return <| List.Tot.append pfx tl'
+  | _ -> return <| List.Tot.append [hd] tl' 
 
-let rec hoist_loops_in_stmts (stmts:list literalStmt) : iresult (list literalStmt)
-= match stmts with 
-  | [] -> return []
-  | hd::tl -> 
-    let! hhd = hoist_loops_in_literal_stmt hd in
-    let! htl = hoist_loops_in_stmts tl in
-    return (hhd::htl)
+
 let hoist_loops_in_query q : iresult query
 = let! stmts = hoist_loops_in_stmts q.stmts in
-  return { q with stmts = stmts }
-
+  return { stmts = stmts }
 
 let lookup_var (ident:string)
 : iresult value
@@ -114,7 +157,7 @@ let rec eval_expr (e:expr)
     | Ast.Object fields -> eval_fields fields (Object [])
     | Ast.ArrayCompr query -> eval_query_stmts query.stmts (Value.Array [])
     | Ast.SetCompr query -> eval_query_stmts query.stmts (Value.Set [])
-      | Ast.ObjectCompr query -> eval_query_stmts query.stmts (Value.Object [])
+    | Ast.ObjectCompr query -> eval_query_stmts query.stmts (Value.Object [])
     | Ast.RefDot rf -> eval_ref_dot rf
     | Ast.RefBrack ri -> eval_ref_brack ri
     | Ast.AssignExpr olr -> eval_assign_expr olr
@@ -151,9 +194,8 @@ and eval_fields (fields:list (expr*expr)) (obj:value)
       | vv -> eval_fields tl (insert_into_object obj kv vv)
 
 
-
-and eval_stmts_in_loop (pr:(list (expr&value) & list literalStmt))  (out:value) 
-: Tot (iresult value) (decreases %[snd pr; 1; fst pr])
+and eval_stmts_in_loop (iterations:list loop_iteration) (stmts:list literalStmt) (out:value)
+: Tot (iresult value) (decreases %[stmts; 1; iterations])
   (* what decreases is the lexicographic ordering of the list of statements and the list of loop expressions, in that order;
      however, we also make a recursive call to an auxiliary eval_query_stmts, and that explains the additional '1' in the order, 
      i.e., we can call the auxiliary function with the same stmts, so long as that aux function doesn't
@@ -161,45 +203,59 @@ and eval_stmts_in_loop (pr:(list (expr&value) & list literalStmt))  (out:value)
 
      See the "trick" mentioned in the note here: https://fstar-lang.org/tutorial/book/part1/part1_termination.html#mutual-recursion
       *)
-= let (iterations, stmts) = pr in
+= 
 match iterations with
 | [] -> return out
-| (e,v)::tl -> 
+| hd::tl -> 
   let! orig_i = get() in
-  set { orig_i with loop_exprs = (e, v)::orig_i.loop_exprs };!
+  set { orig_i with loop_exprs = (hd.loop_expr, hd.loop_value)::orig_i.loop_exprs;
+       scopes=hd.bindings::orig_i.scopes};!
   let! out1 = eval_query_stmts stmts out in
-  eval_stmts_in_loop (tl, stmts) out1
+  set orig_i ;!
+  eval_stmts_in_loop tl stmts out1
 
-and eval_query_stmts (stmts:list literalStmt) (out:value)
-  : Tot(iresult value) (decreases %[stmts; 0])
-= match stmts with
-  | [] -> return Undefined
-  
-  | [hd] -> (
-    match hd.literal with
+and eval_stmt stmt (out:value) 
+: iresult (value&value)
+= match stmt.literal with
     | ArrayComprOutput e ->
       let! v = eval_expr e in
-      return <| insert_into_array out v
+      return <| (Bool true, insert_into_array out v)
     | SetComprOutput e ->
       let! v = eval_expr e in
-      return <| insert_into_set out v
+      return <| (Bool true, insert_into_set out v)
     | ObjectComprOutput (ke, ve) ->
       let! kv = eval_expr ke in
       let! vv = eval_expr ve in
-      return <| insert_into_object out kv vv
+      return <| (Bool true, insert_into_object out kv vv)
+    | Expr e -> 
+      let! v = eval_expr e in
+      return <| (v, out)
     | _ -> 
-      return Undefined
-  )
+      return (Undefined, Undefined)
 
+
+and eval_query_stmts (stmts:list literalStmt) (out:value)
+  : Tot(iresult value) (decreases %[stmts;0])
+= match stmts with
+  | [] -> return out
   | hd::tl ->
-    (* we evaluate hd and just ignore the result, we only care about the side effects? *)
-    let! _v = 
-      match hd.literal with
-      | Expr e -> eval_expr e
-      | _ -> return Undefined
-    in
-    eval_query_stmts tl out
-
+    match hd.literal with
+    | LoopExpr le ->
+      let! iterations = match le with
+      | RefBrack (refr, Var index) ->
+        let! col = eval_expr refr in
+        (match col with
+        | Array arr -> return <| make_array_loop_iterations arr le index 0
+        | Set set -> return <| make_set_loop_iterations set le index
+        | Object fields -> return <| make_object_loop_iterations fields le index
+        | _ -> return [])
+      | _ -> return []
+      in eval_stmts_in_loop iterations tl out
+    | _ ->
+      let! (v, out') = eval_stmt hd out in
+      match v with
+      | Bool false | Undefined -> return Undefined
+      | _ -> eval_query_stmts tl out'
   
 (* todo chaining *)
 and eval_ref_dot rf

@@ -34,14 +34,19 @@ let expr = Ast.Array (
 let intr = Interpreter.make_new()
 let (v5, intr1) = Interpreter.eval intr expr
 
-// [ [a, b] |
+// [ [e, f, g] |
 //  true
 //  a = {"English": "Hello", "French": "Salut"}
 //  b = a["English"]
+//  c = [41, 47]
+//  d = [a , v]
+//  e = d[f][g] # Double loops
 // ]
+// Produces:
+// [ ["Hello", 0, "English"], ["Salut", 0, "French"], [41, 1, 0], [47, 1, 1]]
 let query = {
   stmts= [
-    { literal = Expr(Value(Bool true)); with_mods=[]; loops = []; }; // true
+    { literal = Expr(Value(Bool true)); with_mods=[]; }; // true
     { literal =
        Expr(AssignExpr
              (ColEq,
@@ -52,7 +57,6 @@ let query = {
                ]))
        );
        with_mods=[];
-       loops = [];
     };
     {
       literal =
@@ -63,12 +67,40 @@ let query = {
 
         );
       with_mods=[];
-      loops = [];
     };
-    { literal = ArrayComprOutput (Ast.Array [Var "a"; Var"b"]);
+    {
+      literal =
+        Expr(AssignExpr
+             (ColEq,
+              (Var "c"),
+              (Ast.Array [Value (Number 41); Value (Number 47)]))
+
+        );
+      with_mods=[];
+    };
+    {
+      literal =
+        Expr(AssignExpr
+             (ColEq,
+              (Var "d"),
+              (Ast.Array [Var "a"; Var "c"]))
+
+        );
+      with_mods=[];
+    };
+    {
+      literal =
+        Expr(AssignExpr
+             (ColEq,
+              (Var "e"),
+              (RefBrack (RefBrack (Var "d", Var "f"), (Var "g"))))
+
+        );
+      with_mods=[];
+    };
+    { literal = ArrayComprOutput (Ast.Array [Var "e"; Var "f"; Var "g"]);
       with_mods = [];
-      loops = [];
-      }
+    }
   ];
 }
 
@@ -76,9 +108,9 @@ let intr2 = Interpreter.make_new()
 let (v6, intr3) = Interpreter.eval_user_query intr2 query
 
 let query1 = {
-  stmts = List.Tot.append query.stmts 
+  stmts = List.Tot.append query.stmts
   [{
-    literal = Expr(Value (Bool false)); with_mods=[]; loops = [];
+    literal = Expr(Value (Bool false)); with_mods=[];
   }]
 }
 
