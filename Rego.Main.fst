@@ -110,6 +110,192 @@ let intr4 = Interpreter.make_new ()
 
 let v7, intr5 = Interpreter.eval_user_query intr4 query1
 
+let example =
+  {
+    package = { refr = Var "example" };
+    imports = [];
+    policy
+    =
+    [
+      Spec
+      (Compr (Var "allow", Some ({ op = ColEq; value = Value (Bool true) })),
+        [
+          {
+            assign = None;
+            query
+            =
+            {
+              stmts
+              =
+              [
+                {
+                  literal
+                  =
+                  Expr (BoolExpr (Eq, Call (Var "count", [Var "violations"]), Value (Number 0)));
+                  with_mods = []
+                }
+              ]
+            }
+          }
+        ]);
+      Spec
+      (Set_ ((Var "violations", Some (RefDot (Var "server", "id")))),
+        [
+          {
+            assign = None;
+            query
+            =
+            {
+              stmts
+              =
+              [
+                { literal = Expr (RefBrack (Var "public_server", Var "server")); with_mods = [] };
+                {
+                  literal
+                  =
+                  Expr
+                  (BoolExpr
+                    (Eq,
+                      (RefBrack (RefDot (Var "server", "protocols"), Var "_")),
+                      Value (String "http")));
+                  with_mods = []
+                }
+              ]
+            }
+          }
+        ]);
+      Spec
+      (Set_ ((Var "violations", Some (RefDot (Var "server", "id")))),
+        [
+          {
+            assign = None;
+            query
+            =
+            {
+              stmts
+              =
+              [
+                {
+                  literal = Expr (RefBrack (RefDot (Var "input", "servers"), Var "server"));
+                  with_mods = []
+                };
+                {
+                  literal
+                  =
+                  Expr
+                  (BoolExpr
+                    (Eq,
+                      (RefBrack (RefDot (Var "server", "protocols"), Var "_")),
+                      Value (String "telnet")));
+                  with_mods = []
+                }
+              ]
+            }
+          }
+        ]);
+      Spec
+      (Set_ ((Var "public_server", Some (Var "server"))),
+        [
+          {
+            assign = None;
+            query
+            =
+            {
+              stmts
+              =
+              [
+                {
+                  literal = Expr (RefBrack (RefDot (Var "input", "servers"), Var "server"));
+                  with_mods = []
+                };
+                {
+                  literal
+                  =
+                  Expr
+                  (BoolExpr
+                    (Eq,
+                      (RefBrack (RefDot (Var "server", "ports"), Var "_")),
+                      (RefDot (RefBrack (RefDot (Var "input", "ports"), Var "i"), "id"))));
+                  with_mods = []
+                };
+                {
+                  literal
+                  =
+                  Expr
+                  (BoolExpr
+                    (Eq,
+                      (RefDot (RefBrack (RefDot (Var "input", "ports"), Var "i"), "network")),
+                      (RefDot (RefBrack (RefDot (Var "input", "networks"), Var "j"), "id"))));
+                  with_mods = []
+                };
+                {
+                  literal
+                  =
+                  Expr (RefDot (RefBrack (RefDot (Var "input", "networks"), Var "j"), "public"));
+                  with_mods = []
+                }
+              ]
+            }
+          }
+        ])
+    ];
+    rego_v1 = false
+  }
+
+let input =
+  Object
+  [
+    (String "servers",
+      Array
+      [
+        Object
+        [
+          (String "id", String "app");
+          (String "protocols", Array [String "https"; String "ssh"]);
+          (String "ports", Array [String "p1"; String "p2"; String "p3"])
+        ];
+        Object
+        [
+          (String "id", String "db");
+          (String "protocols", Array [String "mysql"]);
+          (String "ports", Array [String "p3"])
+        ];
+        Object
+        [
+          (String "id", String "cache");
+          (String "protocols", Array [String "memcache"]);
+          (String "ports", Array [String "p3"])
+        ];
+        Object
+        [
+          (String "id", String "ci");
+          (String "protocols", Array [String "http"]);
+          (String "ports", Array [String "p1"; String "p2"])
+        ];
+        Object
+        [
+          (String "id", String "busybox");
+          (String "protocols", Array [String "telnet"]);
+          (String "ports", Array [String "p1"])
+        ]
+      ]);
+    (String "networks",
+      Array
+      [
+        Object [(String "id", String "net1"); (String "public", Bool false)];
+        Object [(String "id", String "net2"); (String "public", Bool false)];
+        Object [(String "id", String "net3"); (String "public", Bool true)];
+        Object [(String "id", String "net4"); (String "public", Bool true)]
+      ]);
+    (String "ports",
+      Array
+      [
+        Object [(String "id", String "p1"); (String "network", String "net1")];
+        Object [(String "id", String "p2"); (String "network", String "net3")];
+        Object [(String "id", String "p3"); (String "network", String "net2")]
+      ])
+  ]
+
 let main () =
   FStar.IO.print_string (to_json_pretty v1);
   FStar.IO.print_string "\n";
