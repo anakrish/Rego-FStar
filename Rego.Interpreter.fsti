@@ -22,7 +22,9 @@ noeq
 type interpreter = {
   rules:list (string * rule);
   scopes:list scope;
-  loop_exprs:list (expr * value)
+  loop_exprs:list (expr * value);
+  data:value;
+  input:value
 }
 
 val make_new (_: unit) : interpreter
@@ -30,3 +32,5 @@ val make_new (_: unit) : interpreter
 val eval (i: interpreter) (e: expr) : (value * interpreter)
 
 val eval_user_query (i: interpreter) (q: query) : (value * interpreter)
+
+val eval_module (i: interpreter) (mod: regoModule) (data:value) (input: value) : (value * interpreter)

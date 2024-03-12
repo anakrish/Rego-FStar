@@ -9,7 +9,7 @@ open Rego.Value
 
 type intr = interpreter
 
-let make_new () = { rules = []; scopes = []; loop_exprs = [] }
+let make_new () = { rules = []; scopes = []; loop_exprs = []; data = Object []; input = Undefined }
 
 type loop_iteration = {
   loop_expr:Ast.expr;
@@ -130,7 +130,8 @@ let rec hoist_loops_in_stmts stmts : iresult (list literalStmt) =
     match hd.literal with
     | Expr e ->
       let! exprs = hoist_loops_in_expr e [] in
-      let loops = List.Tot.map (fun e -> { literal = LoopExpr e; with_mods = [] }) exprs in
+      let exprs' = List.Tot.rev exprs in
+      let loops = List.Tot.map (fun e -> { literal = LoopExpr e; with_mods = [] }) exprs' in
       let pfx = List.Tot.append loops [hd] in
       return <| List.Tot.append pfx tl'
     | _ -> return <| List.Tot.append [hd] tl'
@@ -139,7 +140,18 @@ let hoist_loops_in_query q : iresult query =
   let! stmts = hoist_loops_in_stmts q.stmts in
   return ({ stmts = stmts })
 
-let lookup_var (ident: string) : iresult value = lookup_local_var ident
+
+
+(* TODO: proper lookup order; package qualification *)
+
+let lookup_var (ident: string) : iresult value =
+  let! i = get () in
+  match ident with
+  | "input" -> return i.input
+  | _ ->
+    match lookup_path i.data [(String ident)] with
+    | Undefined -> lookup_local_var ident
+    | v -> return v
 
 let rec eval_expr (e: expr) : iresult value =
   match! lookup_loop_expr e with
@@ -157,6 +169,8 @@ let rec eval_expr (e: expr) : iresult value =
     | Ast.RefDot rf -> eval_ref_dot rf
     | Ast.RefBrack ri -> eval_ref_brack ri
     | Ast.AssignExpr olr -> eval_assign_expr olr
+    | Ast.BoolExpr olr -> eval_bool_expr olr
+    | Ast.Call spec -> eval_call_expr spec
     | _ -> return Undefined
 
 and eval_array_elems (elems: list expr) (values: list value) : iresult value =
@@ -208,7 +222,8 @@ and eval_stmts_in_loop (iterations: list loop_iteration) (stmts: list literalStm
           })
     in
     let! out1 = eval_query_stmts stmts out in
-    let! _ = set orig_i in
+    let! i = get () in
+    let! _ = set ({ i with scopes = orig_i.scopes; loop_exprs = orig_i.loop_exprs }) in
     eval_stmts_in_loop tl stmts out1
 
 and eval_stmt stmt (out: value) : iresult (value & value) =
@@ -236,22 +251,29 @@ and eval_query_stmts (stmts: list literalStmt) (out: value)
   | hd :: tl ->
     match hd.literal with
     | LoopExpr le ->
-      let! iterations =
-        match le with
+      (match le with
         | RefBrack (refr, Var index) ->
-          let! col = eval_expr refr in
-          (match col with
-            | Array arr -> return <| make_array_loop_iterations arr le index 0
-            | Set set -> return <| make_set_loop_iterations set le index
-            | Object fields -> return <| make_object_loop_iterations fields le index
-            | _ -> return [])
-        | _ -> return []
-      in
-      eval_stmts_in_loop iterations tl out
+          (* TODO all vars *)
+          let! lv = lookup_local_var index in
+          (match lv with
+            | Undefined ->
+              let! col = eval_expr refr in
+              let iterations =
+                match col with
+                | Array arr -> make_array_loop_iterations arr le index 0
+                | Set set -> make_set_loop_iterations set le index
+                | Object fields -> make_object_loop_iterations fields le index
+                | _ -> []
+              in
+              eval_stmts_in_loop iterations tl out
+            | _ ->
+              (* loop var already has a value *)
+              eval_query_stmts tl out)
+        | _ -> return Undefined)
     | _ ->
       let! v, out' = eval_stmt hd out in
       match v with
-      | Bool false | Undefined -> return Undefined
+      | Bool false | Undefined -> return out'
       | _ -> eval_query_stmts tl out'
 
 (* todo chaining *)
@@ -285,6 +307,46 @@ and eval_assign_expr (t: (assignOp * expr * expr)) : iresult value =
         | _ -> return Undefined)
   | _ -> return Undefined
 
+and eval_bool_expr (t: (boolOp * expr * expr)) : iresult value =
+  let op, lhs, rhs = t in
+  let! lhs_v = eval_expr lhs in
+  let! rhs_v = eval_expr rhs in
+  match op with
+  | Eq -> return <| Bool (Value.cmp lhs_v rhs_v = 0)
+  | Ne -> return <| Bool (Value.cmp lhs_v rhs_v <> 0)
+  | _ -> return <| Bool false
+
+
+and eval_call_args (args: list expr) : Tot (iresult (list value)) (decreases args) =
+  match args with
+  | [] -> return []
+  | hd :: tl ->
+    let! v = eval_expr hd in
+    let! tlv = eval_call_args tl in
+    return (v :: tlv)
+
+
+and eval_call_expr spec : iresult value =
+  let fcn, params = spec in
+  let! args = eval_call_args params in
+  match (fcn, args) with
+  | Var "count", [col] ->
+    (match col with
+      | Array a -> return <| Number (List.length a)
+      | Set s -> return <| Number (List.length s)
+      | Object fields -> return <| Number (List.length fields)
+      | _ -> return <| Number 0)
+  | _ -> return Undefined
+
+let eval_query (q: Ast.query) (out: value) : iresult value =
+  let! i = get () in
+  let! _ = set ({ i with scopes = [] :: i.scopes }) in
+  let! q' = hoist_loops_in_query q in
+  let! v = eval_query_stmts q'.stmts out in
+  let! i1 = get () in
+  let! _ = set ({ i1 with scopes = i.scopes }) in
+  return v
+
 let eval (i: intr) (e: Ast.expr) : (value * intr) = run (eval_expr e) i
 
 let eval_user_query' (q: Ast.query) : iresult value =
@@ -294,3 +356,41 @@ let eval_user_query' (q: Ast.query) : iresult value =
   eval_query_stmts q1.stmts (Value.Array [])
 
 let eval_user_query (i: intr) (q: Ast.query) : (value * intr) = run (eval_user_query' q) i
+
+let eval_rule (r: rule) : iresult unit =
+  match r with
+  | Spec (head, bodies) ->
+    (match (head, bodies) with
+      | Set_ (Var path, Some key), body :: tl ->
+        let! i = get () in
+        let existing_value =
+          match lookup_path i.data [String path] with
+          | Undefined -> Set []
+          | existing -> existing
+        in
+        (* TODO: old style set with no key; multiple bodies *)
+        let! v = eval_query body.query existing_value in
+        set ({ i with data = insert_at_path i.data [String path] v })
+      | Compr (Var path, assign), body :: tl ->
+        let! i = get () in
+        let! v = eval_query body.query (Array []) in
+        (match v with
+          | Array [r] -> set ({ i with data = insert_at_path i.data [String path] r })
+          | _ -> return ())
+      | _ -> return ())
+  | _ -> return ()
+
+let rec eval_rules (rules: list rule) : (iresult value) =
+  match rules with
+  | [] ->
+    let! i = get () in
+    return i.data
+  | hd :: tl ->
+    let! _ = eval_rule hd in
+    eval_rules tl
+
+let eval_module' (mod: regoModule) : iresult value = eval_rules mod.policy
+
+let eval_module (i: interpreter) (mod: regoModule) (data input: value) : (value * interpreter) =
+  let i' = { i with data = data; input = input } in
+  run (eval_module' mod) i'

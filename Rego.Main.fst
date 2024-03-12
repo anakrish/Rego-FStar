@@ -118,82 +118,6 @@ let example =
     =
     [
       Spec
-      (Compr (Var "allow", Some ({ op = ColEq; value = Value (Bool true) })),
-        [
-          {
-            assign = None;
-            query
-            =
-            {
-              stmts
-              =
-              [
-                {
-                  literal
-                  =
-                  Expr (BoolExpr (Eq, Call (Var "count", [Var "violations"]), Value (Number 0)));
-                  with_mods = []
-                }
-              ]
-            }
-          }
-        ]);
-      Spec
-      (Set_ ((Var "violations", Some (RefDot (Var "server", "id")))),
-        [
-          {
-            assign = None;
-            query
-            =
-            {
-              stmts
-              =
-              [
-                { literal = Expr (RefBrack (Var "public_server", Var "server")); with_mods = [] };
-                {
-                  literal
-                  =
-                  Expr
-                  (BoolExpr
-                    (Eq,
-                      (RefBrack (RefDot (Var "server", "protocols"), Var "_")),
-                      Value (String "http")));
-                  with_mods = []
-                }
-              ]
-            }
-          }
-        ]);
-      Spec
-      (Set_ ((Var "violations", Some (RefDot (Var "server", "id")))),
-        [
-          {
-            assign = None;
-            query
-            =
-            {
-              stmts
-              =
-              [
-                {
-                  literal = Expr (RefBrack (RefDot (Var "input", "servers"), Var "server"));
-                  with_mods = []
-                };
-                {
-                  literal
-                  =
-                  Expr
-                  (BoolExpr
-                    (Eq,
-                      (RefBrack (RefDot (Var "server", "protocols"), Var "_")),
-                      Value (String "telnet")));
-                  with_mods = []
-                }
-              ]
-            }
-          }
-        ]);
-      Spec
       (Set_ ((Var "public_server", Some (Var "server"))),
         [
           {
@@ -205,7 +129,11 @@ let example =
               =
               [
                 {
-                  literal = Expr (RefBrack (RefDot (Var "input", "servers"), Var "server"));
+                  literal
+                  =
+                  Expr
+                  (AssignExpr
+                    (ColEq, Var "server", RefBrack (RefDot (Var "input", "servers"), Var "_")));
                   with_mods = []
                 };
                 {
@@ -233,7 +161,95 @@ let example =
                   =
                   Expr (RefDot (RefBrack (RefDot (Var "input", "networks"), Var "j"), "public"));
                   with_mods = []
-                }
+                };
+                { literal = SetComprOutput (Var "server"); with_mods = [] }
+              ]
+            }
+          }
+        ]);
+      Spec
+      (Set_ ((Var "violations", Some (RefDot (Var "server", "id")))),
+        [
+          {
+            assign = None;
+            query
+            =
+            {
+              stmts
+              =
+              [
+                { literal = Expr (RefBrack (Var "public_server", Var "server")); with_mods = [] };
+                {
+                  literal
+                  =
+                  Expr
+                  (BoolExpr
+                    (Eq,
+                      (RefBrack (RefDot (Var "server", "protocols"), Var "_")),
+                      Value (String "http")));
+                  with_mods = []
+                };
+                { literal = SetComprOutput (RefDot (Var "server", "id")); with_mods = [] }
+              ]
+            }
+          }
+        ]);
+      Spec
+      (Set_ ((Var "violations", Some (RefDot (Var "server", "id")))),
+        [
+          {
+            assign = None;
+            query
+            =
+            {
+              stmts
+              =
+              [
+                {
+                  literal
+                  =
+                  Expr
+                  (AssignExpr
+                    (ColEq, Var "server", RefBrack (RefDot (Var "input", "servers"), Var "_")));
+                  with_mods = []
+                };
+                {
+                  literal
+                  =
+                  Expr
+                  (BoolExpr
+                    (Eq,
+                      (RefBrack (RefDot (Var "server", "protocols"), Var "_")),
+                      Value (String "telnet")));
+                  with_mods = []
+                };
+                { literal = SetComprOutput (RefDot (Var "server", "id")); with_mods = [] }
+              ]
+            }
+          }
+        ]);
+      Spec
+      (Compr (Var "allow", Some ({ op = ColEq; value = Value (Bool true) })),
+        [
+          {
+            assign = None;
+            query
+            =
+            {
+              stmts
+              =
+              [
+                {
+                  literal
+                  =
+                  Expr
+                  (AssignExpr
+                    (ColEq,
+                      Var "r",
+                      BoolExpr (Eq, Call (Var "count", [Var "violations"]), Value (Number 0))));
+                  with_mods = []
+                };
+                { literal = ArrayComprOutput (Var "r"); with_mods = [] }
               ]
             }
           }
@@ -296,6 +312,10 @@ let input =
       ])
   ]
 
+let eg_intr = Interpreter.make_new ()
+
+let eg_v, eg_intr1 = Interpreter.eval_module eg_intr example (Object []) input
+
 let main () =
   FStar.IO.print_string (to_json_pretty v1);
   FStar.IO.print_string "\n";
@@ -310,7 +330,9 @@ let main () =
   FStar.IO.print_string (to_json_pretty v6);
   FStar.IO.print_string "\n";
   FStar.IO.print_string (to_json_pretty v7);
-  FStar.IO.print_string "\n"
+  FStar.IO.print_string "\n";
+  FStar.IO.print_string "\n\n\n\n";
+  FStar.IO.print_string (to_json_pretty eg_intr1.data)
 
 
 
